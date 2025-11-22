@@ -161,6 +161,3 @@ cython_debug/
 
 # VSCode configuration files
 .vscode/
-
-# Data folder
-data/
