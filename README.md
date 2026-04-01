@@ -276,7 +276,7 @@ Note : les metriques avec split chronologique sont inferieures a celles obtenues
 ## Structure du projet
 
 ```
-aug25cds_meteo/
+/
 |
 |-- data/
 |   |-- weatherAUS.csv               # Dataset source
@@ -311,31 +311,30 @@ aug25cds_meteo/
 
 ### Creer l'environnement conda
 
-Le fichier `environment.yml` contient toutes les dependances, y compris xgboost et lightgbm.
+Toutes les dependances, y compris xgboost et lightgbm, sont declarees dans `environment.yml`.
 
 ```bash
 conda env create -f environment.yml
 conda activate weather
 ```
 
-Si l'environnement existe deja et doit etre mis a jour :
+Si l'environnement existe deja :
 
 ```bash
 conda env update -f environment.yml --prune
+conda activate weather
 ```
 
 ### Executer le pipeline complet
 
 ```bash
-cd aug25cds_meteo
-PYTHONIOENCODING=utf-8 conda run -n weather python src/ml_pipeline.py
+conda run -n weather python src/ml_pipeline.py
 ```
 
 ### Ouvrir le notebook
 
 ```bash
-cd aug25cds_meteo/notebooks
-conda run -n weather jupyter notebook DS_project_weatherAUS.ipynb
+conda run -n weather jupyter notebook notebooks/DS_project_weatherAUS.ipynb
 ```
 
 Selectionner le kernel "weather" dans Jupyter.
