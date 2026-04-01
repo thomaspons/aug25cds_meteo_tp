@@ -1,0 +1,19 @@
+{
+  "model": "LightGBM",
+  "split": "chronological",
+  "main_metric": "F2-score",
+  "best_params": "{'selector__k': 40, 'model__subsample': 0.9, 'model__reg_lambda': 0.1, 'model__reg_alpha': 0.1, 'model__num_leaves': 31, 'model__n_estimators': 200, 'model__min_child_samples': 20, 'model__max_depth': 6, 'model__learning_rate': 0.1, 'model__colsample_bytree': 0.7}",
+  "f2_cv": 0.7335669693126059,
+  "f2_test": 0.7294684870540785,
+  "f1_test": 0.5852705969871675,
+  "optimal_threshold": 0.3386994917576398,
+  "recall_rain": 0.8728331715434753,
+  "precision_rain": 0.44023221654892636,
+  "roc_auc": 0.8770138598178362,
+  "brier_score": 0.133648472551494,
+  "log_loss": 0.41732173599469297,
+  "false_negatives": 917,
+  "false_positives": 8003,
+  "train_size": 109302,
+  "test_size": 32891
+}
