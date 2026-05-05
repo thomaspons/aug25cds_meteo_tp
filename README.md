@@ -73,7 +73,7 @@ Source : Kaggle - Weather Dataset Rattle Package
 
 ---
 
-## La demarche ML en 12 etapes
+## La demarche ML en 13 etapes
 
 ### Etape 1 - EDA (Analyse Exploratoire des Donnees)
 
@@ -91,7 +91,7 @@ On supprime uniquement les aberrations physiques, c'est-a-dire les valeurs impos
 |-------|----------------|
 | Humidity inferieure ou egale a 100% | L'humidite ne peut pas depasser la saturation |
 | Rainfall superieure ou egale a 0 | Un volume de pluie est toujours positif |
-| Pressure superieure a 800 hPa | Le record absolu australien est 868 hPa (cyclone Monica, 2006) |
+| Pressure superieure a 900 hPa | Record mesure australien : ~916 hPa (cyclone Monica, 2006). Seuil a 900 hPa pour conserver les cyclones du dataset (ex. Yasi 2011 : ~929 hPa) |
 | WindSpeed superieure ou egale a 0 | Une vitesse est toujours positive |
 
 On ne supprime pas les outliers statistiques (vent a 130 km/h = cyclone rare mais reel). Le RobustScaler les gerera.
@@ -240,6 +240,26 @@ Si le modele annonce 70% pour 100 jours, il devrait effectivement pleuvoir envir
 
 Par defaut, le modele predit "Rain" si proba > 0.5. Ce seuil n'est pas toujours optimal. On cherche le seuil qui maximise le F2-score sur la courbe Precision-Rappel.
 
+### Etape 13 - Interpretabilite (SHAP)
+
+Un modele performant reste une boite noire : on sait ce qu'il predit, pas pourquoi. L'interpretabilite repond a deux besoins. D'abord, la validation physique : les variables jugees importantes par le modele doivent correspondre a ce que la meteorologie nous dit (humidite, pression, vent). Ensuite, la confiance : un utilisateur accepte mieux une prediction qu'il peut partiellement expliquer.
+
+**Pourquoi SHAP**
+
+SHAP (SHapley Additive exPlanations) decompose chaque prediction en contributions individuelles par feature. Pour une observation donnee, SHAP repond a : "cette variable a-t-elle augmente ou diminue la probabilite de pluie, et de combien ?". LIME est moins stable sur des donnees correlees. La permutation d'importance ne donne pas la direction de l'effet.
+
+Pour les modeles a arbres (XGBoost, LightGBM), SHAP utilise TreeExplainer, un algorithme exact qui calcule les valeurs de Shapley en temps polynomial.
+
+**Graphiques produits**
+
+    05a_shap_importance.png   Bar chart de l'importance globale (mean |SHAP|) - Top 20
+    05b_shap_beeswarm.png     Beeswarm : direction et amplitude par observation
+    06_shap_dependence.png    Dependance SHAP des 4 features principales (effet marginal + interaction)
+    07_shap_seasonal.png      Heatmap par saison + boxplot de la feature dominante
+    08_australia_map.png      Carte climatologique des 49 stations : humidite, pression, vents, pluviometrie
+
+La carte utilise cartopy pour afficher un fond geographique reel (cotes, Etats australiens, ocean). Elle montre les profils climatiques par station et justifie visuellement pourquoi Location peut etre un predicteur.
+
 ---
 
 ## Justification des choix techniques
@@ -254,6 +274,7 @@ Par defaut, le modele predit "Rain" si proba > 0.5. Ce seuil n'est pas toujours 
 | Brier Score | Accuracy | Les probabilites meteorologiques comptent autant que la decision binaire |
 | class_weight balanced | Rien | Compense le desequilibre sans creer de faux exemples |
 | XGBoost / LightGBM | SVM, regression logistique | Meilleure performance sur donnees tabulaires, robuste aux outliers |
+| SHAP (TreeExplainer) | LIME, permutation importance | Direction de l'effet verifiable par la physique, calcul exact pour les arbres |
 
 ---
 
@@ -279,18 +300,16 @@ Note : les metriques avec split chronologique sont inferieures a celles obtenues
 /
 |
 |-- data/
-|   |-- weatherAUS.csv               # Dataset source
+|   |-- weatherAUS.csv               # Dataset source (Kaggle)
 |
 |-- notebooks/
-|   |-- DS_project_weatherAUS.ipynb  # Notebook principal (12 etapes documentees)
+|   |-- DS_project_weatherAUS.ipynb  # Notebook principal (13 etapes documentees)
 |
 |-- src/
-|   |-- ml_pipeline.py               # Script Python autonome et valide
-|   |-- features/
-|   |   |-- build_features.py
-|   |-- models/
-|       |-- train_model.py
-|       |-- predict_model.py
+|   |-- ml_pipeline.py               # Script Python autonome (training complet)
+|
+|-- models/
+|   |-- final_model.joblib           # Pipeline sklearn serialise (prod-ready)
 |
 |-- reports/
 |   |-- final_results.json           # Metriques du modele final
@@ -299,10 +318,77 @@ Note : les metriques avec split chronologique sont inferieures a celles obtenues
 |       |-- 02_correlation_target.png
 |       |-- 03_seasonality.png
 |       |-- 04_evaluation.png
+|       |-- 05a_shap_importance.png
+|       |-- 05b_shap_beeswarm.png
+|       |-- 06_shap_dependence.png
+|       |-- 07_shap_seasonal.png
+|       |-- 08_australia_map.png
 |
-|-- models/                          # Modeles sauvegardes
-|-- references/                      # Documentation et notes
-|-- README.md                        # Ce fichier
+|-- references/                      # Articles et documentation meteorologique
+|-- environment.yml                  # Dependances conda
+|-- README.md
+```
+
+---
+
+## Utiliser le modele en production
+
+Apres un premier run du pipeline, `models/final_model.joblib` contient le Pipeline sklearn complet (preprocessing + feature selection + modele). Il peut etre charge et utilise sans relancer l'entrainement.
+
+**Important :** le modele attend les features apres feature engineering (colonnes `roll3`, `Delta_Pressure`, `Wind_x_Humidity`, encodages sin/cos, etc.). Pour une prediction sur une nouvelle observation isolee, les features historiques (`roll3`) peuvent etre laissees a NaN, le pipeline les imputera par la mediane du train.
+
+```python
+import joblib
+import pandas as pd
+import numpy as np
+
+# Chargement du modele serialise
+model = joblib.load('models/final_model.joblib')
+
+# Seuil optimal (determine pendant l'entrainement, stocke dans reports/final_results.json)
+import json
+with open('reports/final_results.json') as f:
+    THRESHOLD = json.load(f)['threshold']
+
+# Nouvelle observation : memes colonnes que weatherAUS.csv + features engineerees
+new_obs = pd.DataFrame([{
+    # Variables brutes
+    'Location': 'Sydney', 'MinTemp': 13.4, 'MaxTemp': 22.9,
+    'Rainfall': 0.6, 'Evaporation': np.nan, 'Sunshine': np.nan,
+    'WindGustDir': 'W', 'WindGustSpeed': 44.0,
+    'WindDir9am': 'W', 'WindDir3pm': 'WNW',
+    'WindSpeed9am': 20.0, 'WindSpeed3pm': 24.0,
+    'Humidity9am': 71.0, 'Humidity3pm': 22.0,
+    'Pressure9am': 1007.7, 'Pressure3pm': 1007.1,
+    'Cloud9am': 8.0, 'Cloud3pm': np.nan,
+    'Temp9am': 16.9, 'Temp3pm': 21.8,
+    'RainToday': 'No', 'Date': '2024-06-15',
+    # Features engineerees (calculer depuis l'historique de la station si disponible)
+    'Month_sin': np.sin(2 * np.pi * 6 / 12),
+    'Month_cos': np.cos(2 * np.pi * 6 / 12),
+    'Delta_Pressure': 1007.1 - 1007.7,
+    'Delta_Humidity': 22.0 - 71.0,
+    'Wind_x_Humidity': 44.0 * 22.0,
+    'Pressure_drop_flag': 0,
+    'HighHumidity_flag': 0,
+    'StrongWind_flag': 0,
+    'WindGustDir_sin': np.sin(np.radians(270)),
+    'WindGustDir_cos': np.cos(np.radians(270)),
+    'WindDir9am_sin': np.sin(np.radians(270)),
+    'WindDir9am_cos': np.cos(np.radians(270)),
+    'WindDir3pm_sin': np.sin(np.radians(292.5)),
+    'WindDir3pm_cos': np.cos(np.radians(292.5)),
+    # Features roll3 : NaN si pas d'historique (imputation automatique par le pipeline)
+    'Rainfall_roll3': np.nan,
+    'Humidity3pm_roll3': np.nan,
+    'WindGustSpeed_roll3': np.nan,
+    'Pressure9am_roll3': np.nan,
+    'TempRange_roll3': np.nan,
+}])
+
+proba = model.predict_proba(new_obs)[:, 1][0]
+prediction = 'Pluie demain' if proba >= THRESHOLD else 'Pas de pluie demain'
+print(f"Probabilite : {proba:.1%}  |  Decision (seuil={THRESHOLD:.3f}) : {prediction}")
 ```
 
 ---

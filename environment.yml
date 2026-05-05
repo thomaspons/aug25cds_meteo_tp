@@ -13,4 +13,5 @@ dependencies:
   - jupyterlab
   - xgboost
   - lightgbm
-  - pip
+  - shap
+  - cartopy
