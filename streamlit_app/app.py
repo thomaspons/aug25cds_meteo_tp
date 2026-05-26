@@ -306,6 +306,19 @@ en compte explicitement via la pondération.
 | Faux Positif | Prédit pluie, beau temps | Faible |
 
 Le F2 pénalise **deux fois plus** les Faux Négatifs.
+
+**Contexte australien**
+
+L'asymétrie des coûts est particulièrement forte sur ce territoire.
+Les sécheresses prolongées rendent chaque épisode pluvieux précieux
+pour la planification de l'irrigation et des restrictions d'eau.
+Le risque de **bushfires** dépend directement de l'humidité prévue :
+un faux négatif fait sous-estimer le danger feu par les services d'alerte.
+Les **crues éclair** en saison cyclonique (Queensland, NSW) imposent
+une anticipation fiable. L'agriculture (semis, récoltes, traitements)
+subit aussi un coût élevé quand une pluie est ratée.
+Rater une pluie réelle coûte bien plus cher qu'une fausse alerte,
+d'où le choix du F2.
 """)
     with c2:
         st.image(fig_path("01_target_distribution.png"))
@@ -917,6 +930,15 @@ def slide_demo():
                 f'</div>',
                 unsafe_allow_html=True,
             )
+
+        st.info(
+            "**Note méthodologique.** Les probabilités affichées sont "
+            "calibrées pour maximiser la détection des épisodes pluvieux "
+            "(F2-score). Elles surestiment volontairement la fréquence "
+            "réelle de pluie pour minimiser les faux négatifs, choix "
+            "justifié par le coût élevé d'une pluie ratée en contexte "
+            "australien (sécheresses, incendies, agriculture)."
+        )
 
         with st.expander("Données brutes et features calculées"):
             display_df = row.T.rename(columns={0: "Valeur"})
