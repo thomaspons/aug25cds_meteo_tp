@@ -66,3 +66,24 @@ Review : https://dl.acm.org/doi/10.1145/3606367
 Implementation sklearn : sklearn.feature_selection.mutual_info_classif
 Estimation non-parametrique par k-plus-proches-voisins.
 Doc : https://scikit-learn.org/stable/modules/generated/sklearn.feature_selection.mutual_info_classif.html
+
+---
+
+## Justification du choix du F2-score (contexte australien)
+
+**State of the Climate (BoM + CSIRO)**
+Rapport conjoint Bureau of Meteorology et CSIRO, publie tous les deux ans.
+Documente la variabilite pluviometrique en Australie : tendances de fond, influence d'El Nino / La Nina, baisse des pluies hivernales dans le sud-ouest, hausse de l'intensite des episodes extremes.
+Justifie le cout eleve d'une pluie ratee dans un contexte de secheresses prolongees.
+Source : http://www.bom.gov.au/state-of-the-climate/
+
+**Australian Fire Danger Rating System (AFDRS)**
+Systeme officiel d'evaluation du risque feu en Australie, successeur du McArthur Forest Fire Danger Index. Utilise directement les previsions de temperature, humidite et precipitations pour calibrer les niveaux d'alerte des services d'urgence.
+Justifie que sous-estimer la pluie revient a sous-estimer le risque feu, avec consequences operationnelles directes.
+Source : https://www.afac.com.au/initiative/afdrs
+
+**Murphy, A. H. (1993)**
+What is a good forecast? An essay on the nature of goodness in weather forecasting.
+Weather and Forecasting, 8(2), 281-293.
+Article fondateur en meteorologie statistique. Distingue trois dimensions de la qualite d'une prevision : consistency (coherence interne), quality (justesse statistique), value (utilite economique). Justifie theoriquement le choix d'une metrique ponderee selon le cout asymetrique des erreurs.
+DOI : 10.1175/1520-0434(1993)008<0281:WIAGFA>2.0.CO;2
