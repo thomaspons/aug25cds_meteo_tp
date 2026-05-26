@@ -1,0 +1,66 @@
+name: Deploy to Streamlit Community Cloud
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Release ${{ github.ref_name }}"
+          body: |
+            ## Weather Australia - Prédiction de pluie
+
+            Release automatique générée depuis le tag `${{ github.ref_name }}`.
+
+            ### Modèle
+            - Algorithme : XGBoost
+            - F2-score (test) : 0.730
+            - ROC-AUC : 0.879
+            - Recall pluie : 0.867
+          draft: false
+          prerelease: false
+
+      - name: Push streamlit_app to deploy branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Crée ou réinitialise la branche deploy
+          git checkout --orphan deploy-tmp
+
+          # Conserve uniquement les fichiers de l'appli Streamlit
+          git rm -rf . --quiet
+          git checkout ${{ github.ref_name }} -- aug25cds_meteo/streamlit_app
+          git checkout ${{ github.ref_name }} -- aug25cds_meteo/models
+          git checkout ${{ github.ref_name }} -- aug25cds_meteo/reports/final_results.json
+          git checkout ${{ github.ref_name }} -- aug25cds_meteo/reports/figures
+
+          # Déplace le contenu de streamlit_app à la racine (requis par Streamlit Cloud)
+          mv aug25cds_meteo/streamlit_app/* .
+          mv aug25cds_meteo/streamlit_app/.streamlit .
+          mv aug25cds_meteo/models models
+          mkdir -p reports/figures
+          mv aug25cds_meteo/reports/final_results.json reports/
+          mv aug25cds_meteo/reports/figures/* reports/figures/ 2>/dev/null || true
+
+          rm -rf aug25cds_meteo
+
+          git add -A
+          git commit -m "deploy: ${{ github.ref_name }}"
+
+          git push origin HEAD:deploy --force

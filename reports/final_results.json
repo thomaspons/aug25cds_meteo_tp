@@ -1,0 +1,19 @@
+{
+  "model": "XGBoost",
+  "split": "chronological",
+  "main_metric": "F2-score",
+  "best_params": "{'selector__k': 40, 'model__subsample': 0.9, 'model__reg_lambda': 0.5, 'model__reg_alpha': 0.5, 'model__n_estimators': 500, 'model__min_child_weight': 5, 'model__max_depth': 6, 'model__learning_rate': 0.05, 'model__gamma': 0.5, 'model__colsample_bytree': 0.8}",
+  "f2_cv": 0.7341583790917092,
+  "f2_test": 0.7300079361374352,
+  "f1_test": 0.5898439341788864,
+  "optimal_threshold": 0.33424803614616394,
+  "recall_rain": 0.8674247677159894,
+  "precision_rain": 0.4468495499357051,
+  "roc_auc": 0.8788615070174461,
+  "brier_score": 0.12992562353610992,
+  "log_loss": 0.40566070136188503,
+  "false_negatives": 956,
+  "false_positives": 7743,
+  "train_size": 109302,
+  "test_size": 32891
+}
