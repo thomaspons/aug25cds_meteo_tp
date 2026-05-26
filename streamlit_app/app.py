@@ -482,44 +482,74 @@ def slide_features():
     st.markdown("# Feature Engineering")
     st.markdown("## Encoder la physique météorologique dans les données")
     st.markdown(
-        "**30 features créées** à partir des 23 colonnes brutes. "
-        "Chaque feature a une justification physique ou statistique."
+        "**34 features créées** à partir des 23 colonnes brutes. "
+        "Chaque feature a une justification physique ou statistique. "
+        "Récap par catégorie : 7 temporelles, 4 deltas, 9 lags/rolling, "
+        "5 flags binaires, 3 interactions, 6 vent cyclique."
     )
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "Temporelles", "Deltas intra-jour", "Lags & fenêtres",
-        "Flags binaires", "Interactions & vent"
+        "Temporelles (7)", "Deltas intra-jour (4)", "Lags & fenêtres (9)",
+        "Flags binaires (5)", "Interactions & vent (3+6)"
     ])
 
     with tab1:
         c1, c2 = st.columns([1.2, 1])
         with c1:
             st.markdown("""
-### Encodage cyclique du temps
+### 7 features temporelles
 ```python
+# Variables intermédiaires (gardées dans le modèle)
+Month         = Date.dt.month         # 1..12
+DayOfYear     = Date.dt.dayofyear     # 1..365
+Season        = Month.map(...)        # Summer/Autumn/Winter/Spring
+
+# Encodage cyclique dérivé
 Month_sin     = sin(2π × Month / 12)
 Month_cos     = cos(2π × Month / 12)
 DayOfYear_sin = sin(2π × DayOfYear / 365)
 DayOfYear_cos = cos(2π × DayOfYear / 365)
-Season        = {Summer, Autumn, Winter, Spring}
 ```
-**Pourquoi sin/cos ?**
 
-Janvier (mois 1) et décembre (mois 12) sont
-**adjacents** dans le calendrier mais distants
-de 11 dans un encodage linéaire.
+**Statut de Month et DayOfYear** : ce sont des intermédiaires
+nécessaires au calcul des sin/cos, mais on les garde aussi
+en features. L'arbre peut s'en servir pour des splits simples
+(par exemple « MaxTemp élevée seulement si Month entre 11 et 3 »).
 
-Avec sin/cos, décembre et janvier ont des coordonnées
-proches dans le plan (cos, sin), l'arbre peut détecter
-« fin d'année » comme une zone continue.
+**Season** : encodage catégoriel (4 modalités), redondant avec
+Month_sin/cos mais lisible pour l'analyse SHAP.
 
-**Pourquoi DayOfYear ?**
+### Pourquoi sin/cos pour le temps ?
 
-Granularité plus fine que le mois. Capture les variations
-intra-mois (début/fin d'hiver austral).
+Avec un encodage linéaire, janvier vaut 1 et décembre vaut 12 :
+ils sont **distants de 11**, alors qu'ils sont **adjacents**
+dans le cycle des saisons. Un arbre qui split sur Month=6
+sépare arbitrairement juin de juillet.
 
-**Season** : encodage catégoriel pour SHAP (lisible),
-redondant avec Month_sin/cos mais aide à l'analyse.
+On projette donc chaque mois sur le **cercle unité** :
+chaque mois devient un angle θ = 2π × Month / 12, et on prend
+ses coordonnées (cos θ, sin θ) comme features.
+
+```
+            Month_sin
+                |
+       Avr  Mar |  Fév  Jan
+         \\    \\|/    /
+   Mai ----+----+----+---- Déc   → Month_cos
+         /    /|\\    \\
+       Juin Juil| Aoû  Sep
+                |
+                Nov, Oct
+```
+
+Sur ce cercle, décembre et janvier sont voisins (distance ≈ 0,52),
+juin et décembre sont opposés (distance = 2). L'arbre peut alors
+faire un split du type « Month_cos > 0,5 » pour isoler la fenêtre
+décembre-février (été austral) en **une seule coupure**.
+
+**DayOfYear_sin/cos** suivent la même logique avec une granularité
+plus fine : ils capturent les variations intra-mois (début vs fin
+d'hiver austral).
 """)
         with c2:
             st.image(fig_path("03_seasonality.png"),
@@ -527,37 +557,37 @@ redondant avec Month_sin/cos mais aide à l'analyse.
 
     with tab2:
         st.markdown("""
-### Variations intra-journalières (9 h → 15 h)
+### 4 deltas intra-journaliers (9 h → 15 h)
 ```python
-Delta_Pressure = Pressure3pm - Pressure9am
-Delta_Humidity = Humidity3pm - Humidity9am
-Delta_Temp     = Temp3pm     - Temp9am
+Delta_Pressure = Pressure3pm  - Pressure9am
+Delta_Humidity = Humidity3pm  - Humidity9am
+Delta_Temp     = Temp3pm      - Temp9am
 Delta_Wind     = WindSpeed3pm - WindSpeed9am
 ```
 
 **Justification physique** : un front pluvieux qui arrive
 provoque dans la journée :
 
-- **Chute de pression** (Delta_Pressure très négatif) → air ascendant
-- **Hausse d'humidité** (Delta_Humidity > 0) → apport de vapeur d'eau
-- **Variation thermique** (Delta_Temp) → couche d'inversion
+- **Delta_Pressure** très négatif (chute de pression) : air ascendant
+- **Delta_Humidity** > 0 (humidité monte) : apport de vapeur d'eau
+- **Delta_Temp** : variation thermique, signal d'inversion
+- **Delta_Wind** : accélération du vent à l'approche du front
 
 Ces variations sont **plus informatives** que les valeurs
 absolues, car elles capturent la **dynamique** du système.
-
-C'est cette feature qui fait que **Delta_Pressure** apparaît
-dans le top SHAP, plus important que Pressure3pm seul.
+C'est ce qui fait que **Delta_Pressure** apparaît dans le top SHAP,
+plus important que Pressure3pm seul.
 """)
 
     with tab3:
         st.markdown("""
-### Lags et fenêtres glissantes (groupby Location)
+### 9 features de mémoire temporelle (3 diff + 6 rolling)
 ```python
-# Diff avec la veille
+# Diff avec la veille (3 features)
 for col in ['Pressure9am', 'Humidity3pm', 'MaxTemp']:
     df[f'{col}_diff1'] = df.groupby('Location')[col].diff()
 
-# Fenêtres 3 jours (sur le passé uniquement)
+# Fenêtres 3 jours sur le passé uniquement (6 features : 3 × {mean, max})
 for col in ['Rainfall', 'Humidity3pm', 'Pressure9am']:
     df[f'{col}_roll3_mean'] = groupby('Location')[col].transform(
         lambda x: x.shift(1).rolling(3, min_periods=1).mean())
@@ -565,31 +595,35 @@ for col in ['Rainfall', 'Humidity3pm', 'Pressure9am']:
         lambda x: x.shift(1).rolling(3, min_periods=1).max())
 ```
 
+**Les 3 diff1** mesurent la variation jour-à-jour. Pression qui
+chute par rapport à hier, humidité qui grimpe, MaxTemp qui baisse :
+trois signaux d'arrivée de système dépressionnaire.
+
+**Les 6 rolling** donnent un état moyen et un pic récents :
+- `mean` : tendance générale (humidité installée sur 3 jours)
+- `max` : pic récent (orage la veille, instabilité résiduelle)
+
 **Le `shift(1)` est CRITIQUE** : sans lui, on inclut le jour
-courant dans la moyenne → **fuite de données** (data leakage).
+courant dans la moyenne, donc **fuite de données** (data leakage).
 Le modèle « voit » ce qu'il doit prédire.
 
 **Le `groupby(Location)`** : on ne mélange pas les stations.
 Le rolling de Sydney ne doit pas intégrer la veille de Darwin.
 
-**Pourquoi mean ET max ?**
-- `mean` : tendance générale (humidité installée)
-- `max` : pic récent (orage la veille → instabilité)
-
-**Pourquoi seulement 3 features ?** Rainfall, Humidity, Pressure
-sont les meilleurs prédicteurs persistants. Ajouter rolls sur
-Temp ou Wind dégrade le modèle (bruit).
+**Pourquoi ces 3 colonnes seulement (Rainfall, Humidity, Pressure) ?**
+Ce sont les meilleurs prédicteurs persistants. Ajouter du rolling
+sur Temp ou Wind dégrade le modèle (bruit, pas de persistance).
 """)
 
     with tab4:
         st.markdown("""
-### Indicateurs binaires (seuils physiques)
+### 5 indicateurs binaires (seuils physiques)
 ```python
 Pressure_drop_flag  = (Delta_Pressure  < -2)    # chute > 2 hPa
-HighHumidity_flag   = (Humidity3pm    > 85)     # air saturé
-StrongWind_flag     = (WindGustSpeed  > 60)     # km/h rafales
-HumidityRising_flag = (Delta_Humidity > 10)     # apport vapeur
-PressureLow_flag    = (Pressure9am    < 1010)   # dépression
+HighHumidity_flag   = (Humidity3pm     > 85)    # air saturé
+StrongWind_flag     = (WindGustSpeed   > 60)    # km/h rafales
+HumidityRising_flag = (Delta_Humidity  > 10)    # apport vapeur
+PressureLow_flag    = (Pressure9am     < 1010)  # dépression
 ```
 
 **Pourquoi binariser ce qu'on a déjà en continu ?**
@@ -602,34 +636,34 @@ les fournissant explicitement on :
 3. **Capture les non-linéarités** (effet de seuil météo)
 
 **Choix des seuils** : valeurs **issues de la littérature
-météorologique**, pas optimisées sur le train (sinon : overfitting).
+météorologique**, pas optimisées sur le train (sinon overfitting).
 
-- 85 % humidité → seuil de saturation typique
-- 60 km/h rafales → « coup de vent » (Beaufort 8)
-- 1010 hPa → seuil empirique des dépressions australes
-- 2 hPa de chute → signal de front significatif
+- 85 % humidité : seuil de saturation typique
+- 60 km/h rafales : coup de vent (Beaufort 8)
+- 1010 hPa : seuil empirique des dépressions australes
+- 2 hPa de chute : signal de front significatif
+- 10 points d'humidité en hausse : apport de vapeur marqué
 """)
 
     with tab5:
         st.markdown("""
-### Features d'interaction
+### 3 features d'interaction
 ```python
-Rain_x_Humidity = RainToday × Humidity3pm
+Rain_x_Humidity = RainToday    × Humidity3pm
 Wind_x_Humidity = WindGustSpeed × Humidity3pm
-TempRange       = MaxTemp - MinTemp
+TempRange       = MaxTemp      - MinTemp
 ```
 
-**Rain_x_Humidity** : il pleut + humidité élevée = système
-pluvieux installé (la pluie de demain est très probable).
+**Rain_x_Humidity** : il pleut aujourd'hui + humidité élevée =
+système pluvieux installé (la pluie de demain est très probable).
 
-**Wind_x_Humidity** : c'est cette feature qui ressort
-**#2 en SHAP**. Vent fort + humidité forte = front
-actif (transport horizontal d'air humide).
+**Wind_x_Humidity** : ressort **#2 en SHAP**. Vent fort +
+humidité forte = front actif (transport horizontal d'air humide).
 
-**TempRange** : amplitude thermique journalière.
-Faible amplitude = ciel couvert = pluie probable.
+**TempRange** : amplitude thermique journalière. Faible amplitude
+= ciel couvert = pluie probable. Forte amplitude = ciel clair.
 
-### Encodage cyclique des directions de vent
+### 6 features de direction de vent (cyclique)
 ```python
 for col in ['WindGustDir', 'WindDir9am', 'WindDir3pm']:
     angles = df[col].map({N: 0, NNE: 22.5, ..., NNW: 337.5})
@@ -637,11 +671,17 @@ for col in ['WindGustDir', 'WindDir9am', 'WindDir3pm']:
     df[f'{col}_cos'] = cos(radians(angles))
 ```
 
-Même logique que Month_sin/cos : N (0°) et NNW (337.5°)
-sont voisins physiquement.
+3 colonnes texte × 2 (sin et cos) = 6 features numériques.
+
+**Même logique que Month_sin/cos** : N (0°) et NNW (337,5°)
+sont voisins sur la rose des vents mais distants numériquement.
+En projetant sur le cercle unité, N et NNW deviennent proches
+dans le plan (cos, sin), donc l'arbre traite les directions
+comme un continuum et non comme 16 catégories disjointes.
 
 Après encodage on **drop** les colonnes texte (WindGustDir, etc.)
-sinon elles seraient OneHotEncoded → 48 colonnes binaires inutiles.
+sinon elles seraient OneHotEncoded en 48 colonnes binaires
+inutiles (3 × 16 directions).
 """)
 
 
