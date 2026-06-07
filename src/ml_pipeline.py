@@ -15,8 +15,6 @@ import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import matplotlib.cm as mcm
-import matplotlib.colors as mcolors
 import seaborn as sns
 
 from sklearn.model_selection import StratifiedKFold, cross_val_score, RandomizedSearchCV
@@ -27,7 +25,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.feature_selection import SelectKBest, mutual_info_classif
 from functools import partial
 mutual_info_fixed = partial(mutual_info_classif, random_state=42)
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     classification_report, fbeta_score, f1_score, brier_score_loss,
     log_loss, roc_auc_score, confusion_matrix, ConfusionMatrixDisplay,
@@ -131,7 +129,7 @@ for col in ['WindGustDir','WindDir9am','WindDir3pm']:
     df[f'{col}_sin'] = np.sin(np.radians(angles))
     df[f'{col}_cos'] = np.cos(np.radians(angles))
 
-df = df.drop(columns=['WindGustDir','WindDir9am','WindDir3pm','Date'])
+df = df.drop(columns=['WindGustDir','WindDir9am','WindDir3pm'])
 print(f"  Shape aprs FE : {df.shape}")
 
 # =============================================================================
@@ -139,118 +137,24 @@ print(f"  Shape aprs FE : {df.shape}")
 # =============================================================================
 print("\n[4/12] SPLIT CHRONOLOGIQUE")
 
-# Reconstituer la colonne Date depuis DayOfYear+Month  non, on l'a droppe.
-# On va couper sur l'index tri (les donnes sont dj tries par Location+Date)
-# Meilleure approche : refaire le split sur le dataset complet avec la vraie date.
-df_with_date = pd.read_csv(DATA_PATH, usecols=['Date'])
-df_with_date['Date'] = pd.to_datetime(df_with_date['Date'])
-# Aligner les index (aprs cleaning, certains index ont t retirs)
-# On recharge proprement avec la date pour le split
-df_full = pd.read_csv(DATA_PATH)
-df_full['Date'] = pd.to_datetime(df_full['Date'])
-df_full = df_full.drop_duplicates()
-df_full = df_full[(df_full['Humidity9am'].isna()) | (df_full['Humidity9am'] <= 100)]
-df_full = df_full[(df_full['Humidity3pm'].isna()) | (df_full['Humidity3pm'] <= 100)]
-df_full = df_full[(df_full['Rainfall'].isna())    | (df_full['Rainfall'] >= 0)]
-df_full = df_full[(df_full['Pressure9am'].isna()) | (df_full['Pressure9am'] > 900)]
-df_full = df_full[(df_full['Pressure3pm'].isna()) | (df_full['Pressure3pm'] > 900)]
-df_full = df_full[(df_full['WindSpeed9am'].isna())| (df_full['WindSpeed9am'] >= 0)]
-df_full = df_full[(df_full['WindSpeed3pm'].isna())| (df_full['WindSpeed3pm'] >= 0)]
-df_full = df_full.dropna(subset=['RainTomorrow'])
-df_full = df_full.sort_values('Date').reset_index(drop=True)
-
-# Coupure chronologique : 80% des dates uniques
-unique_dates = df_full['Date'].sort_values().unique()
+# Donnees temporelles : on coupe sur les dates pour eviter toute fuite du futur
+# vers le passe. Les 80% de dates les plus anciennes servent a l'entrainement,
+# les 20% restantes au test. La Date n'est pas une feature (l'information
+# temporelle est deja portee par Month_sin/cos et DayOfYear_sin/cos), on la
+# retire donc juste apres avoir construit les masques.
+unique_dates = df['Date'].sort_values().unique()
 cutoff_date  = unique_dates[int(len(unique_dates) * 0.8)]
-print(f"  Date de coupure : {cutoff_date.date()}")
-print(f"  Train : {df_full['Date'].min().date()}  {cutoff_date.date()}")
-print(f"  Test  : {cutoff_date.date()}  {df_full['Date'].max().date()}")
+print(f"  Date de coupure : {pd.Timestamp(cutoff_date).date()}")
+print(f"  Train : {df['Date'].min().date()} -> {pd.Timestamp(cutoff_date).date()}")
+print(f"  Test  : {pd.Timestamp(cutoff_date).date()} -> {df['Date'].max().date()}")
 
-train_idx = df_full['Date'] <  cutoff_date
-test_idx  = df_full['Date'] >= cutoff_date
-print(f"  Train size : {train_idx.sum()} | Test size : {test_idx.sum()}")
-print(f"  Ratio pluie train : {(df_full.loc[train_idx,'RainTomorrow']=='Yes').mean():.3f}")
-print(f"  Ratio pluie test  : {(df_full.loc[test_idx, 'RainTomorrow']=='Yes').mean():.3f}")
+train_mask = df['Date'] <  cutoff_date
+test_mask  = df['Date'] >= cutoff_date
 
-# Reconstruire df avec features mais en gardant l'ordre chronologique
-# df a dj t tri par Location+Date  on rutilise les index nettoys
-# Plus simple : reconstruire X/y depuis df (dj trait)
-df_sorted = df.copy()  # df est tri Location+Date, mme lignes que df_full aprs cleaning
+df = df.drop(columns=['Date'])
 
-# La date a t droppe de df  on utilise DayOfYear+Month_sin/cos comme proxy
-# MAIS il vaut mieux refaire proprement : on ajoute la date au df avant de la dropper
-# Refaire le FE en gardant la date pour le split
-df2 = pd.read_csv(DATA_PATH)
-df2['Date'] = pd.to_datetime(df2['Date'])
-df2 = df2.drop_duplicates()
-df2 = df2[(df2['Humidity9am'].isna()) | (df2['Humidity9am'] <= 100)]
-df2 = df2[(df2['Humidity3pm'].isna()) | (df2['Humidity3pm'] <= 100)]
-df2 = df2[(df2['Rainfall'].isna())    | (df2['Rainfall'] >= 0)]
-df2 = df2[(df2['Pressure9am'].isna()) | (df2['Pressure9am'] > 900)]
-df2 = df2[(df2['Pressure3pm'].isna()) | (df2['Pressure3pm'] > 900)]
-df2 = df2[(df2['WindSpeed9am'].isna())| (df2['WindSpeed9am'] >= 0)]
-df2 = df2[(df2['WindSpeed3pm'].isna())| (df2['WindSpeed3pm'] >= 0)]
-df2 = df2.dropna(subset=['RainTomorrow'])
-df2['RainTomorrow'] = (df2['RainTomorrow'] == 'Yes').astype(int)
-df2['RainToday']    = df2['RainToday'].map({'Yes': 1, 'No': 0})
-
-df2['Month']     = df2['Date'].dt.month
-df2['DayOfYear'] = df2['Date'].dt.dayofyear
-df2['Season']    = df2['Month'].map({
-    12:'Summer',1:'Summer',2:'Summer',3:'Autumn',4:'Autumn',5:'Autumn',
-    6:'Winter',7:'Winter',8:'Winter',9:'Spring',10:'Spring',11:'Spring'
-})
-df2['Month_sin']     = np.sin(2*np.pi*df2['Month']/12)
-df2['Month_cos']     = np.cos(2*np.pi*df2['Month']/12)
-df2['DayOfYear_sin'] = np.sin(2*np.pi*df2['DayOfYear']/365)
-df2['DayOfYear_cos'] = np.cos(2*np.pi*df2['DayOfYear']/365)
-
-df2 = df2.sort_values(['Location','Date']).reset_index(drop=True)
-
-df2['Delta_Pressure'] = df2['Pressure3pm'] - df2['Pressure9am']
-df2['Delta_Humidity'] = df2['Humidity3pm'] - df2['Humidity9am']
-df2['Delta_Temp']     = df2['Temp3pm']     - df2['Temp9am']
-df2['Delta_Wind']     = df2['WindSpeed3pm']- df2['WindSpeed9am']
-
-for col in ['Pressure9am','Humidity3pm','MaxTemp']:
-    lag = df2.groupby('Location')[col].shift(1)
-    df2[f'{col}_diff1'] = df2[col] - lag
-
-for col in ['Rainfall','Humidity3pm','Pressure9am']:
-    df2[f'{col}_roll3_mean'] = df2.groupby('Location')[col].transform(
-        lambda x: x.shift(1).rolling(3, min_periods=1).mean())
-    df2[f'{col}_roll3_max'] = df2.groupby('Location')[col].transform(
-        lambda x: x.shift(1).rolling(3, min_periods=1).max())
-
-df2['Pressure_drop_flag']  = (df2['Delta_Pressure'] < -2).astype(int)
-df2['HighHumidity_flag']   = (df2['Humidity3pm'] > 85).astype(int)
-df2['StrongWind_flag']     = (df2['WindGustSpeed'] > 60).astype(int)
-df2['HumidityRising_flag'] = (df2['Delta_Humidity'] > 10).astype(int)
-df2['PressureLow_flag']    = (df2['Pressure9am'] < 1010).astype(int)
-
-df2['Rain_x_Humidity'] = df2['RainToday'].fillna(0) * df2['Humidity3pm'].fillna(df2['Humidity3pm'].median())
-df2['Wind_x_Humidity'] = df2['WindGustSpeed'].fillna(0) * df2['Humidity3pm'].fillna(df2['Humidity3pm'].median())
-df2['TempRange']       = df2['MaxTemp'] - df2['MinTemp']
-
-for col in ['WindGustDir','WindDir9am','WindDir3pm']:
-    angles = df2[col].map(wind_dir_map)
-    df2[f'{col}_sin'] = np.sin(np.radians(angles))
-    df2[f'{col}_cos'] = np.cos(np.radians(angles))
-
-df2 = df2.drop(columns=['WindGustDir','WindDir9am','WindDir3pm'])
-# Garder la Date pour le split, puis la dropper dans X
-
-# Split chronologique
-unique_dates2 = df2['Date'].sort_values().unique()
-cutoff_date2  = unique_dates2[int(len(unique_dates2) * 0.8)]
-
-train_mask = df2['Date'] <  cutoff_date2
-test_mask  = df2['Date'] >= cutoff_date2
-
-df2 = df2.drop(columns=['Date'])
-
-X = df2.drop(columns=['RainTomorrow'])
-y = df2['RainTomorrow']
+X = df.drop(columns=['RainTomorrow'])
+y = df['RainTomorrow']
 
 X_train = X[train_mask].reset_index(drop=True)
 X_test  = X[test_mask].reset_index(drop=True)
@@ -278,22 +182,6 @@ preprocessor = ColumnTransformer(transformers=[
         ('ohe', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
     ]), categorical_features)
 ], remainder='drop')
-
-# =============================================================================
-# 6. PONDRATION ANTI-LABEL-NOISE
-# =============================================================================
-print("\n[6/12] PONDRATION ANTI-LABEL-NOISE")
-rainfall_train = X_train['Rainfall'].fillna(0)
-humidity_train = X_train['Humidity3pm'].fillna(50)
-
-sample_weight = np.ones(len(y_train))
-ambig_low  = (rainfall_train < 0.5) & (y_train == 1)
-ambig_mid  = humidity_train.between(60, 75) & (y_train == 0)
-clear_pos  = (rainfall_train > 5) & (y_train == 1)
-sample_weight[ambig_low.values]  = 0.6
-sample_weight[ambig_mid.values]  = 0.8
-sample_weight[clear_pos.values]  = 1.5
-print(f"  Ambigus (0.6) : {ambig_low.sum()} | Ambigus (0.8) : {ambig_mid.sum()} | Clairs (1.5) : {clear_pos.sum()}")
 
 # =============================================================================
 # 7. FEATURE SELECTION
@@ -571,9 +459,11 @@ if _shap_ok:
     # Figure 05a : Bar chart importance globale (mean |SHAP|)
     # ------------------------------------------------------------------
     fig, ax = plt.subplots(figsize=(10, 7))
-    _mean_shap.head(20).sort_values().plot(kind='barh', ax=ax, color='#4C72B0', edgecolor='white')
+    _colors_shap = ['#C44E52' if r < 5 else '#4C72B0' for r in range(20)]
+    _mean_shap.head(20).sort_values().plot(kind='barh', ax=ax,
+                                           color=_colors_shap[::-1], edgecolor='white', alpha=0.9)
     ax.set_title(f'Importance SHAP globale (mean |SHAP|) - Top 20\n{best_name}', fontsize=13)
-    ax.set_xlabel('Mean |SHAP value|')
+    ax.set_xlabel('Moyenne des valeurs SHAP absolues sur le test set')
     ax.grid(axis='x', alpha=0.3)
     plt.tight_layout()
     plt.savefig(os.path.join(REPORTS_DIR, '05a_shap_importance.png'), dpi=100, bbox_inches='tight')
@@ -581,43 +471,20 @@ if _shap_ok:
     print("  Sauvegarde : 05a_shap_importance.png")
 
     # ------------------------------------------------------------------
-    # Figure 05b : Beeswarm (implementation matplotlib directe, sans shap.plots)
-    # shap.plots.beeswarm et shap.summary_plot peuvent echouer selon l'env.
-    # On construit le beeswarm manuellement : scatter par feature avec jitter vertical.
+    # Figure 05b : Beeswarm via l'API native shap (memes couleurs partout)
+    # On force la colormap RdBu_r (rouge = valeur haute, bleu = valeur basse).
+    # values/data/feature_names doivent porter sur LES MEMES colonnes (top 20).
     # ------------------------------------------------------------------
-    _n_disp = min(20, len(_top20))
-    _feats_disp = _top20[:_n_disp]
-    fig, ax = plt.subplots(figsize=(10, 8))
-
-    for _rank, _feat in enumerate(reversed(_feats_disp)):
-        _col_idx = _sel_names.index(_feat)
-        _shap_vals = _sv[:, _col_idx]
-        _feat_vals = _X_df[_feat].values
-
-        # Normalisation de la couleur (rouge = valeur haute, bleu = valeur basse)
-        _vmin, _vmax = np.nanpercentile(_feat_vals, [5, 95])
-        _norm = mcolors.Normalize(vmin=_vmin, vmax=_vmax)
-        _colors = mcm.RdBu_r(_norm(_feat_vals))
-
-        # Jitter vertical pour eviter la superposition des points
-        _jitter = np.random.default_rng(_rank).uniform(-0.3, 0.3, size=len(_shap_vals))
-        ax.scatter(_shap_vals, _rank + _jitter, c=_colors, s=8, alpha=0.5, linewidths=0)
-
-    ax.set_yticks(range(_n_disp))
-    ax.set_yticklabels(list(reversed(_feats_disp)), fontsize=9)
-    ax.axvline(0, color='black', lw=0.8, linestyle='--', alpha=0.5)
-    ax.set_xlabel('Valeur SHAP (impact sur la prediction de pluie)')
-    ax.set_title(f'SHAP Beeswarm - {best_name}', fontsize=13)
-    ax.grid(axis='x', alpha=0.2)
-
-    # Colorbar manuelle (rouge = valeur haute, bleu = valeur basse)
-    _sm = mcm.ScalarMappable(cmap='RdBu_r', norm=mcolors.Normalize(0, 1))
-    _sm.set_array([])
-    cbar = plt.colorbar(_sm, ax=ax, shrink=0.4, pad=0.02)
-    cbar.set_label('Valeur de la feature\n(normalisee)', fontsize=8)
-    cbar.set_ticks([0, 1])
-    cbar.set_ticklabels(['Basse', 'Haute'])
-
+    _top20_idx = [_sel_names.index(f) for f in _top20]
+    _shap_exp = _shap_mod.Explanation(
+        values=_sv[:, _top20_idx],
+        data=_X_df[_top20].values,
+        feature_names=_top20,
+    )
+    plt.figure()
+    _shap_mod.plots.beeswarm(_shap_exp, max_display=20,
+                             color=plt.get_cmap('RdBu_r'), show=False)
+    plt.title(f'SHAP Beeswarm - {best_name}', fontsize=13, pad=20)
     plt.tight_layout()
     plt.savefig(os.path.join(REPORTS_DIR, '05b_shap_beeswarm.png'), dpi=100, bbox_inches='tight')
     plt.close('all')
@@ -636,7 +503,7 @@ if _shap_ok:
         except Exception:
             _shap_mod.dependence_plot(feat, _sv, _X_df, ax=ax, show=False,
                                       interaction_index=None)
-        ax.set_title(f'Dependence: {feat}', fontsize=10)
+        ax.set_title(f'Dependance SHAP : {feat}', fontsize=10)
         ax.grid(alpha=0.3)
     plt.suptitle(f'SHAP Dependence Plots - Top 4 features | {best_name}',
                  fontsize=12, fontweight='bold')

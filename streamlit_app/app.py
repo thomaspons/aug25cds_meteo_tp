@@ -97,7 +97,7 @@ SEASON_MAP = {
 @st.cache_resource
 def load_model():
     return joblib.load(MODEL_PATH)
-
+ 
 @st.cache_data
 def load_results():
     with open(RESULTS_PATH) as f:
@@ -144,7 +144,7 @@ def fetch_open_meteo(lat: float, lon: float) -> dict:
 def build_feature_row(location: str, api_data: dict) -> pd.DataFrame:
     """
     Construit le vecteur de features pour le jour courant à partir des données Open-Meteo.
-    Reproduit fidèlement le feature engineering de ml_pipeline.py (df2).
+    Reproduit fidèlement le feature engineering de ml_pipeline.py (section 3).
     Retourne un DataFrame à une ligne prêt pour model.predict_proba().
     """
     daily  = pd.DataFrame(api_data["daily"])
@@ -295,8 +295,9 @@ L'accuracy n'est pas la bonne métrique.
 
 Les capteurs enregistrent parfois 0.1 mm sur un ciel
 sans nuage, ou ratent une petite averse.
-Cette imprécision dans la labélisation doit être prise
-en compte explicitement via la pondération.
+Cette imprécision dans la labélisation incite à privilégier
+une métrique robuste (F2) plutôt qu'à sur-interpréter chaque
+étiquette individuelle.
 
 **Pourquoi le F2-score ?**
 
@@ -357,7 +358,7 @@ def slide_dataset():
 
 **Variables les plus importantes (SHAP) :**
 - Humidity3pm, Wind_x_Humidity
-- Pressure3pm, Sunshine, Delta_Pressure
+- Pressure3pm, Sunshine, Rainfall
 
 **Valeurs manquantes notables :**
 - Sunshine : 48 % de NaN
@@ -447,9 +448,9 @@ def slide_demarche():
          "l'entraînement."),
         ("05", "Preprocessing",
          "Pipeline sklearn : RobustScaler + SimpleImputer + OneHotEncoder."),
-        ("06", "Pondération anti-bruit",
-         "sample_weight 0.6 / 0.8 / 1.5 selon la fiabilité du label "
-         "(ambiguïté pluviométrique)."),
+        ("06", "Gestion du déséquilibre",
+         "Rééquilibrage au niveau de la classe : class_weight='balanced' "
+         "(RandomForest, LightGBM) et scale_pos_weight (XGBoost)."),
         ("07", "Feature Selection",
          "SelectKBest (Mutual Information, random_state=42). k optimisé "
          "en cross-validation."),
@@ -705,12 +706,13 @@ def slide_choix():
          "Sur des données météo, cela crée des journées **physiquement "
          "impossibles** (humidité 95 % + ensoleillement 12 h). On préfère : "
          "`scale_pos_weight` (XGBoost) et `class_weight='balanced'` (LGBM)."),
-        ("Pondération anti-bruit (sample_weight)",
-         "Les labels eux-mêmes sont bruités : 0.5 mm un jour « sec », "
-         "rien un jour « humide ». On affecte un poids :\n"
-         "- **0.6** si Rainfall < 0.5 mm mais labélisé « pluie » (ambigu)\n"
-         "- **0.8** si Humidity entre 60,75 % labélisé « pas pluie » (frontière)\n"
-         "- **1.5** si Rainfall > 5 mm et labélisé « pluie » (signal clair)"),
+        ("Pondération par observation : envisagée puis écartée",
+         "Une pondération anti-bruit par observation (sous-pondérer les jours "
+         "ambigus, sur-pondérer les pluies franches) a été envisagée puis "
+         "**écartée** : elle se cumulerait avec le rééquilibrage de classe "
+         "(double comptage), ses seuils ne sont pas validés, et sous-pondérer "
+         "des jours de pluie irait **contre l'objectif de recall** (F2). "
+         "Le rééquilibrage repose donc sur `class_weight` / `scale_pos_weight`."),
         ("Feature selection par Mutual Information",
          "**SelectKBest(mutual_info_classif, k=35)** intégré dans le pipeline "
          "(pas en pré-processing). La MI capture les dépendances **non-linéaires** "
