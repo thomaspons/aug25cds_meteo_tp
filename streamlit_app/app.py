@@ -858,30 +858,39 @@ Pour chaque saison (Summer, Autumn, Winter, Spring), on calcule
 la **moyenne |SHAP|** des top 10 features. Plus la case est rouge,
 plus la feature compte pour cette saison-là.
 
-- **Hiver austral (Winter)** : Humidity3pm et Pressure3pm dominent.
-  Les fronts dépressionnaires venus de l'océan Antarctique gouvernent
-  la météo du sud de l'Australie.
+- **Humidity3pm** reste la feature dominante toute l'année (~0.57,0.65),
+  avec un **pic en été** (0.65) : l'humidité de l'après-midi est le
+  signal de pluie le plus fort quelle que soit la saison.
 
-- **Été (Summer)** : Wind_x_Humidity prend de l'importance, la mousson
-  tropicale du nord (Darwin, Cairns) est dominée par les vents humides
-  et les orages convectifs.
+- **Été (Summer)** : c'est **Sunshine** qui se démarque le plus
+  (0.33 contre 0.15,0.24 ailleurs), aux côtés du pic d'Humidity3pm.
+  Un ciel dégagé en été est très discriminant pour « pas de pluie ».
 
-- **Printemps / Automne** : profils intermédiaires, plus équilibrés.
+- **Hiver austral (Winter)** : **Pressure3pm** atteint son maximum
+  (0.285), cohérent avec les fronts dépressionnaires qui pilotent la
+  pluie hivernale du sud de l'Australie.
+
+- **Wind_x_Humidity** est au contraire **stable sur les 4 saisons**
+  (~0.44,0.49) : un signal de fond, peu saisonnier.
 
 **Lecture du boxplot (droite)**
 
-Distribution de la valeur SHAP de la **feature #1** (typiquement Humidity3pm)
-par saison. Une boîte étalée signifie que cette feature **discrimine
-fortement** les jours de pluie/pas pluie pour cette saison.
+Distribution de la valeur SHAP (signée) de **Humidity3pm** par saison.
+La position de la boîte par rapport à 0 indique le sens de la contribution
+(négatif = pousse vers « pas de pluie »).
 
-- En hiver, la boîte est large et la médiane proche de 0, la feature
-  bascule franchement d'un côté ou de l'autre selon les jours.
-- En été, distribution plus resserrée, la pluie est plus systématique
-  (saison humide), Humidity3pm explique une part stable.
+- **Hiver** : c'est la seule boîte qui **chevauche franchement 0**
+  (médiane ~ -0.2, remontant jusqu'à +0.37). L'humidité de l'après-midi
+  bascule d'un côté ou de l'autre selon les jours, son effet est ambigu.
+- **Été** : médiane la **plus négative** (~ -0.47) ; en été une humidité
+  donnée pousse plus nettement vers « pas de pluie », l'effet est moins
+  ambigu qu'en hiver.
 
-**Conclusion** : le modèle a appris des **règles différentes selon
-la saison**, ce qui valide l'utilité des features temporelles cycliques
-(Month_sin/cos, DayOfYear_sin/cos).
+**Conclusion** : l'importance et même le **sens** des features varient
+selon la saison (Pressure3pm en hiver, Sunshine en été, bascule de
+Humidity3pm). Le modèle exploite donc bien l'information saisonnière
+portée par les features temporelles cycliques (Month_sin/cos,
+DayOfYear_sin/cos).
 """)
 
 
@@ -906,7 +915,7 @@ def slide_carte():
 **Conclusion SHAP :**
 Location n'est pas dans le top 20 des features SHAP.
 Le modèle capture implicitement la géographie via
-Humidity3pm, Pressure9am et WindGustSpeed, qui encodent
+Humidity3pm, Pressure3pm et WindGustSpeed, qui encodent
 déjà le profil climatique de chaque station.
 """)
 

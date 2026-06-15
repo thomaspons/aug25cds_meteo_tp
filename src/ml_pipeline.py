@@ -599,7 +599,7 @@ if _shap_ok:
 
     _climate = _df_raw_map.groupby('Location').agg(
         humidity = ('Humidity3pm', 'mean'),
-        pressure = ('Pressure9am', 'mean'),
+        pressure = ('Pressure3pm', 'mean'),
         rainfall = ('Rainfall',    'mean'),
         wind_u   = ('_wind_u',     'mean'),
         wind_v   = ('_wind_v',     'mean'),
@@ -617,7 +617,7 @@ if _shap_ok:
 
     _panels = [
         ('humidity', 'YlGnBu',   'Humidite moyenne a 15h (%)',         '%',   False),
-        ('pressure', 'RdYlBu_r', 'Pression atm. 9h (hPa) + vent 15h', 'hPa', True),
+        ('pressure', 'RdYlBu_r', 'Pression atm. 15h (hPa) + vent 15h', 'hPa', True),
         ('rainfall', 'Blues',    'Pluviometrie journaliere moy. (mm)',  'mm',  False),
     ]
 
